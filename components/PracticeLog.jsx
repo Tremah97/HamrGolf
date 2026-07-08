@@ -81,34 +81,32 @@ export default function PracticeLog() {
 
   const [storageAvailable, setStorageAvailable] = useState(true);
 
+  // Load saved sessions on mount, using real browser localStorage —
+  // this persists on-device across visits on any deployed website,
+  // unlike the artifact-preview-only storage API used previously.
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      // guard: storage may not exist in every render context — never let
-      // its absence throw during mount, just fall back to in-memory state.
-      if (typeof window === "undefined" || !window.storage || typeof window.storage.get !== "function") {
-        if (!cancelled) setStorageAvailable(false);
+    try {
+      if (typeof window === "undefined" || !window.localStorage) {
+        setStorageAvailable(false);
         return;
       }
-      try {
-        const res = await window.storage.get(STORAGE_KEY);
-        if (!cancelled && res?.value) setSessions(JSON.parse(res.value));
-      } catch (e) {
-        // key doesn't exist yet, or storage errored — either way, start empty
-        if (!cancelled) setStorageAvailable(true);
-      }
-    })();
-    return () => { cancelled = true; };
+      const raw = window.localStorage.getItem(STORAGE_KEY);
+      if (raw) setSessions(JSON.parse(raw));
+    } catch (e) {
+      // private browsing mode, storage disabled, or corrupted data —
+      // fall back to in-memory only rather than crash
+      setStorageAvailable(false);
+    }
   }, []);
 
-  const persist = async (next) => {
+  const persist = (next) => {
     setSessions(next);
     if (!storageAvailable) return; // in-memory only for this session
     setSaving(true);
     try {
-      if (window?.storage?.set) await window.storage.set(STORAGE_KEY, JSON.stringify(next));
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
     } catch (e) {
-      setStorageAvailable(false); // stop retrying if it keeps failing
+      setStorageAvailable(false); // e.g. storage quota exceeded or blocked
     }
     setSaving(false);
   };
